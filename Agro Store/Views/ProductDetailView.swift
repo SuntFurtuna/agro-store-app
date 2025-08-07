@@ -19,6 +19,7 @@ struct ProductDetailView: View {
     @State private var quantity: Double = 1
     @State private var selectedDeliveryOption: DeliveryOption = .pickup
     @State private var showingOrderConfirmation = false
+    @State private var showingCheckout = false
     @State private var deliveryAddress = ""
     @State private var orderNotes = ""
     
@@ -131,7 +132,7 @@ struct ProductDetailView: View {
             if currentUser.userType != .farmer || currentUser.id != product.farmerID {
                 OrderBottomBar(
                     totalPrice: totalPrice,
-                    onOrder: { showingOrderConfirmation = true }
+                    onOrder: { showingCheckout = true }
                 )
             }
         }
@@ -146,6 +147,16 @@ struct ProductDetailView: View {
                 totalPrice: totalPrice,
                 customer: currentUser
             )
+        }
+        .sheet(isPresented: $showingCheckout) {
+            NavigationView {
+                CheckoutViewWrapper(
+                    product: product,
+                    quantity: quantity,
+                    deliveryOption: selectedDeliveryOption,
+                    currentUser: currentUser
+                )
+            }
         }
         .onAppear {
             incrementViews()

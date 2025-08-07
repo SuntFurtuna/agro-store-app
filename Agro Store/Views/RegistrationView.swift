@@ -114,7 +114,10 @@ struct RegistrationView: View {
     }
     
     private var isFormValid: Bool {
-        !name.isEmpty && !email.isEmpty && !phone.isEmpty && !location.isEmpty &&
+        if selectedUserType == .consumer {
+            return true
+        }
+        return !name.isEmpty && !email.isEmpty && !phone.isEmpty && !location.isEmpty &&
         (selectedUserType != .farmer || !farmName.isEmpty)
     }
     
