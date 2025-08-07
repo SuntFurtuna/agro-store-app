@@ -12,7 +12,13 @@ import SwiftData
 struct Agro_StoreApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            User.self,
+            Product.self,
+            Order.self,
+            OrderItem.self,
+            DemandRequest.self,
+            RequestResponse.self,
+            Subscription.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

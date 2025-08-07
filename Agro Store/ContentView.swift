@@ -10,52 +10,70 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
-
+    @State private var selectedTab = 0
+    @State private var currentUser: User?
+    @State private var showingOnboarding = true
+    
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
+        Group {
+            if showingOnboarding || currentUser == nil {
+                OnboardingView(currentUser: $currentUser, showingOnboarding: $showingOnboarding)
+            } else {
+                MainTabView(currentUser: currentUser!)
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-        } detail: {
-            Text("Select an item")
+        }
+        .onAppear {
+            checkForExistingUser()
         }
     }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
+    
+    private func checkForExistingUser() {
+        // In a real app, you'd check for stored user credentials
+        // For now, we'll show onboarding
+        showingOnboarding = true
     }
+}
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
-            }
+struct MainTabView: View {
+    let currentUser: User
+    
+    var body: some View {
+        TabView {
+            MarketplaceView(currentUser: currentUser)
+                .tabItem {
+                    Image(systemName: "storefront.fill")
+                    Text("Marketplace")
+                }
+            
+            DemandsView(currentUser: currentUser)
+                .tabItem {
+                    Image(systemName: "exclamationmark.bubble.fill")
+                    Text("Demands")
+                }
+            
+            MapView(currentUser: currentUser)
+                .tabItem {
+                    Image(systemName: "map.fill")
+                    Text("Map")
+                }
+            
+            OrdersView(currentUser: currentUser)
+                .tabItem {
+                    Image(systemName: "bag.fill")
+                    Text("Orders")
+                }
+            
+            ProfileView(currentUser: currentUser)
+                .tabItem {
+                    Image(systemName: "person.fill")
+                    Text("Profile")
+                }
         }
+        .accentColor(.green)
     }
 }
 
 #Preview {
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+        .modelContainer(for: [User.self, Product.self, Order.self, OrderItem.self, DemandRequest.self, RequestResponse.self, Subscription.self], inMemory: true)
 }
