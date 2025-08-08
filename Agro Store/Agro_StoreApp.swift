@@ -16,6 +16,7 @@ struct Agro_StoreApp: App {
             Product.self,
             Order.self,
             OrderItem.self,
+            CartItem.self,
             DemandRequest.self,
             RequestResponse.self,
             Subscription.self

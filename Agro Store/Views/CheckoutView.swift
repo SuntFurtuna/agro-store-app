@@ -8,8 +8,37 @@
 import SwiftUI
 import PassKit
 
-import PassKit
-import SwiftUI
+struct PaymentButtonView: UIViewRepresentable {
+    let buttonType: PKPaymentButtonType
+    let buttonStyle: PKPaymentButtonStyle
+    let action: () -> Void
+    
+    func makeUIView(context: Context) -> PKPaymentButton {
+        let button = PKPaymentButton(paymentButtonType: buttonType, paymentButtonStyle: buttonStyle)
+        button.addTarget(context.coordinator, action: #selector(Coordinator.buttonTapped), for: .touchUpInside)
+        return button
+    }
+    
+    func updateUIView(_ uiView: PKPaymentButton, context: Context) {
+        // Nothing to update
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+    
+    class Coordinator: NSObject {
+        let action: () -> Void
+        
+        init(action: @escaping () -> Void) {
+            self.action = action
+        }
+        
+        @objc func buttonTapped() {
+            action()
+        }
+    }
+}
 
 struct CheckoutView: UIViewControllerRepresentable {
     typealias UIViewControllerType = PKPaymentAuthorizationViewController
@@ -18,6 +47,7 @@ struct CheckoutView: UIViewControllerRepresentable {
     let quantity: Double
     let deliveryOption: DeliveryOption
     let currentUser: User
+    let onOrderCreated: (Order) -> Void
     
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -58,6 +88,28 @@ struct CheckoutView: UIViewControllerRepresentable {
         func paymentAuthorizationViewController(_ controller: PKPaymentAuthorizationViewController, didAuthorizePayment payment: PKPayment, handler completion: @escaping (PKPaymentAuthorizationResult) -> Void) {
             // Here you would send the payment token to your server or payment processor
             
+            // Create the order when payment is successful
+            let orderItem = OrderItem(
+                productID: parent.product.id,
+                productName: parent.product.name,
+                quantity: parent.quantity,
+                unitPrice: parent.product.price
+            )
+            
+            let order = Order(
+                customerID: parent.currentUser.id,
+                farmerID: parent.product.farmerID,
+                items: [orderItem],
+                totalAmount: parent.product.price * parent.quantity,
+                deliveryOption: parent.deliveryOption
+            )
+            
+            // Mark payment as successful
+            order.paymentStatus = .paid
+            
+            // Notify parent that order was created
+            parent.onOrderCreated(order)
+            
             // For demo, assume success
             completion(PKPaymentAuthorizationResult(status: .success, errors: nil))
         }
@@ -70,12 +122,15 @@ struct CheckoutView: UIViewControllerRepresentable {
 
 struct CheckoutViewWrapper: View {
     @Environment(\.presentationMode) var presentationMode
+    @Environment(\.modelContext) private var modelContext
     let product: Product
     let quantity: Double
     let deliveryOption: DeliveryOption
     let currentUser: User
     
     @State private var showApplePay = false
+    @State private var orderCreated = false
+    @State private var createdOrder: Order?
     
     var body: some View {
         VStack(spacing: 20) {
@@ -87,17 +142,50 @@ struct CheckoutViewWrapper: View {
             Text("Quantity: \(Int(quantity)) \(product.unit)")
             Text("Total: $\(String(format: "%.2f", product.price * quantity))")
             
-            Button(action: {
-                showApplePay = true
-            }) {
-                PKPaymentButton(paymentButtonType: .buy, paymentButtonStyle: .black)
-                    .frame(height: 44)
-                    .background(Color.black)
-                    .cornerRadius(8)
-            }
-            .padding()
-            .sheet(isPresented: $showApplePay) {
-                CheckoutView(product: product, quantity: quantity, deliveryOption: deliveryOption, currentUser: currentUser)
+            if orderCreated {
+                VStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.system(size: 60))
+                    
+                    Text("Order Placed Successfully!")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    
+                    Text("Order ID: \(createdOrder?.id.uuidString.prefix(8) ?? "")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Button("View Orders") {
+                        presentationMode.wrappedValue.dismiss()
+                        // Navigate to orders view would go here
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top)
+                }
+                .padding()
+            } else {
+                PaymentButtonView(buttonType: .buy, buttonStyle: .black) {
+                    showApplePay = true
+                }
+                .frame(height: 44)
+                .cornerRadius(8)
+                .padding()
+                .sheet(isPresented: $showApplePay) {
+                    CheckoutView(
+                        product: product,
+                        quantity: quantity,
+                        deliveryOption: deliveryOption,
+                        currentUser: currentUser
+                    ) { order in
+                        // Handle order creation
+                        modelContext.insert(order)
+                        try? modelContext.save()
+                        createdOrder = order
+                        orderCreated = true
+                        showApplePay = false
+                    }
+                }
             }
             
             Spacer()
@@ -122,7 +210,7 @@ struct CheckoutViewWrapper: View {
     farmer.rating = 4.8
     farmer.totalReviews = 47
     
-    let product = Product(name: "Organic Tomatoes", description: "Fresh, locally grown organic tomatoes.", category: .vegetables, price: 15.0, unit: "kg", farmerID: farmer.id, location: "Orhei")
+    let product = Product(name: "Organic Tomatoes", description: "Fresh, locally grown organic tomatoes.", category: .vegetables, price: 15.0, unit: "kg", farmerID: farmer.id, farmerName: "Maria's Organic Farm", location: "Orhei")
     product.isOrganic = true
     product.availableQuantity = 50
     product.minimumOrder = 2
@@ -132,5 +220,5 @@ struct CheckoutViewWrapper: View {
     return NavigationView {
         CheckoutViewWrapper(product: product, quantity: 3, deliveryOption: .pickup, currentUser: user)
     }
-    .modelContainer(for: [Product.self, User.self], inMemory: true)
+    .modelContainer(for: [Product.self, User.self, Order.self], inMemory: true)
 }

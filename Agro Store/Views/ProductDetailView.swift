@@ -19,7 +19,7 @@ struct ProductDetailView: View {
     @State private var quantity: Double = 1
     @State private var selectedDeliveryOption: DeliveryOption = .pickup
     @State private var showingOrderConfirmation = false
-    @State private var showingCheckout = false
+    @State private var showingAddToCartSuccess = false
     @State private var deliveryAddress = ""
     @State private var orderNotes = ""
     
@@ -132,7 +132,7 @@ struct ProductDetailView: View {
             if currentUser.userType != .farmer || currentUser.id != product.farmerID {
                 OrderBottomBar(
                     totalPrice: totalPrice,
-                    onOrder: { showingCheckout = true }
+                    onOrder: { addToCart() }
                 )
             }
         }
@@ -148,15 +148,10 @@ struct ProductDetailView: View {
                 customer: currentUser
             )
         }
-        .sheet(isPresented: $showingCheckout) {
-            NavigationView {
-                CheckoutViewWrapper(
-                    product: product,
-                    quantity: quantity,
-                    deliveryOption: selectedDeliveryOption,
-                    currentUser: currentUser
-                )
-            }
+        .alert("Added to Cart", isPresented: $showingAddToCartSuccess) {
+            Button("OK") { }
+        } message: {
+            Text("\(product.name) has been added to your cart.")
         }
         .onAppear {
             incrementViews()
@@ -174,6 +169,43 @@ struct ProductDetailView: View {
     private func addToLikes() {
         product.likes += 1
         try? modelContext.save()
+    }
+    
+    private func addToCart() {
+        // Check if item already exists in cart
+        let userID = currentUser.id
+        let productID = product.id
+        
+        let descriptor = FetchDescriptor<CartItem>(
+            predicate: #Predicate<CartItem> { cartItem in
+                cartItem.userID == userID && cartItem.productID == productID
+            }
+        )
+        
+        if let existingCartItems = try? modelContext.fetch(descriptor),
+           let existingItem = existingCartItems.first {
+            // Update quantity of existing item
+            existingItem.quantity += quantity
+        } else {
+            // Create new cart item
+            let cartItem = CartItem(
+                userID: currentUser.id,
+                productID: product.id,
+                productName: product.name,
+                productPrice: product.price,
+                quantity: quantity,
+                unit: product.unit,
+                deliveryOption: selectedDeliveryOption
+            )
+            modelContext.insert(cartItem)
+        }
+        
+        do {
+            try modelContext.save()
+            showingAddToCartSuccess = true
+        } catch {
+            print("Failed to add item to cart: \(error)")
+        }
     }
 }
 
@@ -476,7 +508,7 @@ struct OrderBottomBar: View {
             Spacer()
             
             Button(action: onOrder) {
-                Text("Place Order")
+                Text("Add to Cart")
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding(.horizontal, 32)
@@ -499,7 +531,7 @@ struct OrderBottomBar: View {
     farmer.rating = 4.8
     farmer.totalReviews = 47
     
-    let product = Product(name: "Organic Tomatoes", description: "Fresh, locally grown organic tomatoes. Perfect for salads and cooking.", category: .vegetables, price: 15.0, unit: "kg", farmerID: farmer.id, location: "Orhei")
+    let product = Product(name: "Organic Tomatoes", description: "Fresh, locally grown organic tomatoes. Perfect for salads and cooking.", category: .vegetables, price: 15.0, unit: "kg", farmerID: farmer.id, farmerName: farmer.farmName ?? farmer.name, location: "Orhei")
     product.isOrganic = true
     product.availableQuantity = 50
     product.minimumOrder = 2

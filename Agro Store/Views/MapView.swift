@@ -14,55 +14,81 @@ struct MapView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var products: [Product]
     @Query private var farmers: [User]
+    @Query private var farmerProfiles: [Farmer]
     
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 47.0105, longitude: 28.8638), // Chisinau, Moldova
         span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
     )
     @State private var selectedProduct: Product?
+    @State private var selectedFarmer: User?
     @State private var showingProductDetail = false
-    @State private var mapType: MapType = .farmers
+    @State private var showingFarmerDetail = false
+    @State private var mapType: MapType = .products
+    @State private var showingMapInfo = false
     
     var filteredFarmers: [User] {
-        farmers.filter { $0.userType == .farmer && $0.latitude != nil && $0.longitude != nil }
+        farmers.filter { farmer in
+            farmer.userType == .farmer &&
+            farmer.latitude != nil &&
+            farmer.longitude != nil &&
+            farmer.latitude! >= -90 && farmer.latitude! <= 90 &&
+            farmer.longitude! >= -180 && farmer.longitude! <= 180
+        }
     }
     
     var availableProducts: [Product] {
-        products.filter { $0.isAvailable && $0.latitude != nil && $0.longitude != nil }
+        products.filter { product in
+            product.isAvailable &&
+            product.latitude != nil &&
+            product.longitude != nil &&
+            product.latitude! >= -90 && product.latitude! <= 90 &&
+            product.longitude! >= -180 && product.longitude! <= 180
+        }
     }
     
     var body: some View {
         NavigationView {
             ZStack {
-                Map(coordinateRegion: $region, annotationItems: mapType == .farmers ? [] : availableProducts) { product in
-                    MapAnnotation(coordinate: CLLocationCoordinate2D(
-                        latitude: product.latitude ?? 0,
-                        longitude: product.longitude ?? 0
-                    )) {
-                        ProductMapPin(product: product) {
-                            selectedProduct = product
-                            showingProductDetail = true
+                // Single Map view that shows either products or farmers based on mapType
+                if mapType == .products {
+                    Map(coordinateRegion: $region, annotationItems: availableProducts) { product in
+                        MapAnnotation(coordinate: CLLocationCoordinate2D(
+                            latitude: product.latitude ?? 47.0105,
+                            longitude: product.longitude ?? 28.8638
+                        )) {
+                            ProductMapPin(product: product) {
+                                selectedProduct = product
+                                showingProductDetail = true
+                            }
+                        }
+                    }
+                } else {
+                    Map(coordinateRegion: $region, annotationItems: filteredFarmers) { farmer in
+                        MapAnnotation(coordinate: CLLocationCoordinate2D(
+                            latitude: farmer.latitude ?? 47.0105,
+                            longitude: farmer.longitude ?? 28.8638
+                        )) {
+                            FarmerMapPin(farmer: farmer) {
+                                selectedFarmer = farmer
+                                showingFarmerDetail = true
+                            }
                         }
                     }
                 }
-                .overlay(
-                    // Farmer pins overlay
-                    ForEach(mapType == .farmers ? filteredFarmers : [], id: \.id) { farmer in
-                        if let lat = farmer.latitude, let lon = farmer.longitude {
-                            FarmerMapPin(farmer: farmer)
-                                .position(
-                                    x: coordinateToPoint(lat: lat, lon: lon).x,
-                                    y: coordinateToPoint(lat: lat, lon: lon).y
-                                )
-                        }
-                    }
-                )
                 
                 // Map type selector
                 VStack {
                     HStack {
                         Spacer()
                         VStack(spacing: 8) {
+                            MapTypeButton(
+                                title: "Products",
+                                icon: "leaf.fill",
+                                isSelected: mapType == .products,
+                                action: { mapType = .products }
+                            )
+                            
                             MapTypeButton(
                                 title: "Farmers",
                                 icon: "person.crop.circle.fill",
@@ -71,10 +97,10 @@ struct MapView: View {
                             )
                             
                             MapTypeButton(
-                                title: "Products",
-                                icon: "leaf.fill",
-                                isSelected: mapType == .products,
-                                action: { mapType = .products }
+                                title: "Info",
+                                icon: "info.circle.fill",
+                                isSelected: false,
+                                action: { showingMapInfo = true }
                             )
                         }
                         .padding()
@@ -112,16 +138,27 @@ struct MapView: View {
                 ProductDetailView(product: product, currentUser: currentUser)
             }
         }
-        .onAppear {
-            loadSampleData()
+        .sheet(isPresented: $showingFarmerDetail) {
+            if let farmer = selectedFarmer {
+                FarmerDetailView(farmer: farmer, currentUser: currentUser)
+            }
         }
-    }
-    
-    private func coordinateToPoint(lat: Double, lon: Double) -> CGPoint {
-        // This is a simplified conversion - in a real app you'd use proper map projection
-        let x = (lon - region.center.longitude) / region.span.longitudeDelta * 300 + 200
-        let y = (region.center.latitude - lat) / region.span.latitudeDelta * 300 + 200
-        return CGPoint(x: x, y: y)
+        .sheet(isPresented: $showingMapInfo) {
+            MapInfoView(
+                totalProducts: availableProducts.count,
+                totalFarmers: filteredFarmers.count,
+                mapType: mapType
+            )
+        }
+        .onAppear {
+            // Ensure region is properly set
+            if region.center.latitude == 0 && region.center.longitude == 0 {
+                region = MKCoordinateRegion(
+                    center: CLLocationCoordinate2D(latitude: 47.0105, longitude: 28.8638),
+                    span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
+                )
+            }
+        }
     }
     
     private func centerOnUserLocation() {
@@ -130,27 +167,6 @@ struct MapView: View {
             center: CLLocationCoordinate2D(latitude: 47.0105, longitude: 28.8638),
             span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
         )
-    }
-    
-    private func loadSampleData() {
-        // Add some sample data if none exists
-        if farmers.isEmpty {
-            let sampleFarmer = User(name: "Maria's Organic Farm", email: "maria@farm.com", phone: "123456789", userType: .farmer, location: "Orhei")
-            sampleFarmer.latitude = 47.3831
-            sampleFarmer.longitude = 28.8212
-            sampleFarmer.farmName = "Maria's Organic Farm"
-            sampleFarmer.farmDescription = "Organic vegetables and herbs"
-            modelContext.insert(sampleFarmer)
-            
-            let product = Product(name: "Fresh Tomatoes", description: "Organic cherry tomatoes", category: .vegetables, price: 15.0, unit: "kg", farmerID: sampleFarmer.id, location: "Orhei")
-            product.latitude = 47.3831
-            product.longitude = 28.8212
-            product.isOrganic = true
-            product.availableQuantity = 50
-            modelContext.insert(product)
-            
-            try? modelContext.save()
-        }
     }
 }
 
@@ -161,22 +177,44 @@ struct ProductMapPin: View {
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 2) {
-                Image(systemName: product.category.icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(.white)
-                    .frame(width: 30, height: 30)
-                    .background(Color.green)
-                    .clipShape(Circle())
-                    .shadow(radius: 2)
+                ZStack {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 35, height: 35)
+                    
+                    VStack(spacing: 1) {
+                        Image(systemName: product.category.icon)
+                            .font(.system(size: 12))
+                            .foregroundColor(.white)
+                        
+                        if let method = product.farmingMethod, method == .organic {
+                            Image(systemName: "leaf.fill")
+                                .font(.system(size: 8))
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                .shadow(radius: 3)
                 
-                Text("$\(String(format: "%.0f", product.price))")
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(4)
+                VStack(spacing: 1) {
+                    Text("$\(String(format: "%.0f", product.price))")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(4)
+                    
+                    if let farmerName = product.farmerName {
+                        Text(farmerName)
+                            .font(.system(size: 8))
+                            .foregroundColor(.gray)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 60)
+                    }
+                }
             }
         }
     }
@@ -184,27 +222,41 @@ struct ProductMapPin: View {
 
 struct FarmerMapPin: View {
     let farmer: User
+    let onTap: () -> Void
     
     var body: some View {
-        VStack(spacing: 2) {
-            Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: 20))
-                .foregroundColor(.white)
-                .frame(width: 35, height: 35)
-                .background(Color.blue)
-                .clipShape(Circle())
-                .shadow(radius: 2)
-            
-            if let farmName = farmer.farmName {
-                Text(farmName)
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(4)
-                    .lineLimit(1)
+        Button(action: onTap) {
+            VStack(spacing: 2) {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 40, height: 40)
+                    
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.white)
+                }
+                .shadow(radius: 3)
+                
+                VStack(spacing: 1) {
+                    if let farmName = farmer.farmName {
+                        Text(farmName)
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(4)
+                            .lineLimit(1)
+                            .frame(maxWidth: 80)
+                    }
+                    
+                    Text(farmer.location)
+                        .font(.system(size: 8))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
             }
         }
     }
@@ -270,6 +322,297 @@ struct MapLegendView: View {
 enum MapType {
     case farmers
     case products
+}
+
+struct FarmerDetailView: View {
+    let farmer: User
+    let currentUser: User
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query private var products: [Product]
+    
+    var farmerProducts: [Product] {
+        products.filter { $0.farmerID == farmer.id && $0.isAvailable }
+    }
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Farmer Header
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 60, height: 60)
+                                .overlay(
+                                    Image(systemName: "person.crop.circle.fill")
+                                        .font(.system(size: 30))
+                                        .foregroundColor(.white)
+                                )
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(farmer.farmName ?? farmer.name)
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                
+                                Text(farmer.location)
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                
+                                if farmer.isVerified {
+                                    HStack {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text("Verified Farmer")
+                                            .font(.caption)
+                                            .foregroundColor(.green)
+                                    }
+                                }
+                            }
+                            
+                            Spacer()
+                        }
+                        
+                        if let description = farmer.farmDescription {
+                            Text(description)
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    
+                    // Products Section
+                    if !farmerProducts.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Available Products (\(farmerProducts.count))")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+                                ForEach(farmerProducts, id: \.id) { product in
+                                    MapProductCard(product: product)
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                    }
+                    
+                    // Contact Information
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Contact Information")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        VStack(spacing: 8) {
+                            HStack {
+                                Image(systemName: "envelope.fill")
+                                    .foregroundColor(.blue)
+                                Text(farmer.email)
+                                Spacer()
+                            }
+                            
+                            HStack {
+                                Image(systemName: "phone.fill")
+                                    .foregroundColor(.blue)
+                                Text(farmer.phone)
+                                Spacer()
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                }
+                .padding()
+            }
+            .navigationTitle("Farmer Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct MapProductCard: View {
+    let product: Product
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: product.category.icon)
+                    .font(.title2)
+                    .foregroundColor(.green)
+                Spacer()
+                Text("$\(String(format: "%.1f", product.price))")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.green)
+            }
+            
+            Text(product.name)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .lineLimit(2)
+            
+            Text(product.productDescription)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+            
+            HStack {
+                if product.isOrganic {
+                    Text("Organic")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.2))
+                        .foregroundColor(.green)
+                        .cornerRadius(4)
+                }
+                
+                Spacer()
+                
+                Text("\(String(format: "%.0f", product.availableQuantity)) \(product.unit)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+}
+
+struct MapInfoView: View {
+    let totalProducts: Int
+    let totalFarmers: Int
+    let mapType: MapType
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                VStack(spacing: 16) {
+                    Image(systemName: "map.fill")
+                        .font(.system(size: 50))
+                        .foregroundColor(.green)
+                    
+                    Text("Farm Map Overview")
+                        .font(.title)
+                        .fontWeight(.bold)
+                    
+                    Text("Discover local farmers and fresh products in your area")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                VStack(spacing: 16) {
+                    MapStatCard(
+                        icon: "leaf.fill",
+                        title: "Products Available",
+                        value: "\(totalProducts)",
+                        color: .green
+                    )
+                    
+                    MapStatCard(
+                        icon: "person.crop.circle.fill",
+                        title: "Local Farmers",
+                        value: "\(totalFarmers)",
+                        color: .blue
+                    )
+                }
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("How to use the map:")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 12, height: 12)
+                            Text("Green pins show available products")
+                                .font(.subheadline)
+                        }
+                        
+                        HStack {
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 12, height: 12)
+                            Text("Blue pins show farmer locations")
+                                .font(.subheadline)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "hand.tap.fill")
+                                .foregroundColor(.gray)
+                            Text("Tap any pin for more details")
+                                .font(.subheadline)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Map Information")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct MapStatCard: View {
+    let icon: String
+    let title: String
+    let value: String
+    let color: Color
+    
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
+                .frame(width: 40)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(value)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(color)
+                
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
 }
 
 #Preview {

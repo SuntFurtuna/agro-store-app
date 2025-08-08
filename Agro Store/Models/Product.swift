@@ -20,6 +20,7 @@ final class Product {
     var availableQuantity: Double
     var imageURLs: [String]
     var farmerID: UUID
+    var farmerName: String? // Cache farmer name for quick display
     var isOrganic: Bool
     var harvestDate: Date?
     var expiryDate: Date?
@@ -27,6 +28,7 @@ final class Product {
     var latitude: Double?
     var longitude: Double?
     var isAvailable: Bool
+    var farmingMethod: FarmingMethod?
     var deliveryOptions: [DeliveryOption]
     var createdAt: Date
     var updatedAt: Date
@@ -34,7 +36,7 @@ final class Product {
     var likes: Int
     var tags: [String]
     
-    init(name: String, description: String, category: ProductCategory, price: Double, unit: String, farmerID: UUID, location: String) {
+    init(name: String, description: String, category: ProductCategory, price: Double, unit: String, farmerID: UUID, farmerName: String, location: String) {
         self.id = UUID()
         self.name = name
         self.productDescription = description
@@ -45,6 +47,7 @@ final class Product {
         self.availableQuantity = 0.0
         self.imageURLs = []
         self.farmerID = farmerID
+        self.farmerName = farmerName
         self.isOrganic = false
         self.location = location
         self.isAvailable = true
@@ -54,6 +57,37 @@ final class Product {
         self.views = 0
         self.likes = 0
         self.tags = []
+    }
+}
+
+enum FarmingMethod: String, CaseIterable, Codable {
+    case organic = "organic"
+    case conventional = "conventional"
+    case biodynamic = "biodynamic"
+    case permaculture = "permaculture"
+    case hydroponic = "hydroponic"
+    case greenhouse = "greenhouse"
+    
+    var displayName: String {
+        switch self {
+        case .organic: return "Organic"
+        case .conventional: return "Conventional"
+        case .biodynamic: return "Biodynamic"
+        case .permaculture: return "Permaculture"
+        case .hydroponic: return "Hydroponic"
+        case .greenhouse: return "Greenhouse"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .organic: return "leaf.fill"
+        case .conventional: return "circle.fill"
+        case .biodynamic: return "moon.fill"
+        case .permaculture: return "tree.fill"
+        case .hydroponic: return "drop.fill"
+        case .greenhouse: return "building.2.fill"
+        }
     }
 }
 
@@ -120,7 +154,7 @@ enum DeliveryOption: String, CaseIterable, Codable {
         switch self {
         case .pickup: return "location.fill"
         case .delivery: return "car.fill"
-        case .shipping: return "shippingbox.fill"
+        case .shipping: return "box.fill"
         }
     }
 }

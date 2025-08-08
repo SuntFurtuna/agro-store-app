@@ -186,6 +186,7 @@ struct AddProductView: View {
             price: priceValue,
             unit: unit,
             farmerID: farmer.id,
+            farmerName: farmer.farmName ?? farmer.name,
             location: farmer.location
         )
         
